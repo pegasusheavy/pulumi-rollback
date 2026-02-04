@@ -24,6 +24,7 @@ type RollbackOptions struct {
 	DryRun        bool
 	Verbose       bool
 	Output        io.Writer
+	Operator      StackOperator // Optional: use for testing
 }
 
 // RollbackResult contains the result of a rollback operation
@@ -40,8 +41,11 @@ func PreviewRollback(ctx context.Context, opts RollbackOptions) (*RollbackResult
 	if opts.Output == nil {
 		opts.Output = os.Stdout
 	}
+	if opts.Operator == nil {
+		opts.Operator = DefaultOperator
+	}
 
-	stack, err := auto.SelectStackLocalSource(ctx, opts.StackName, opts.ProjectPath)
+	stack, err := opts.Operator.SelectStack(ctx, opts.StackName, opts.ProjectPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to select stack: %w", err)
 	}
@@ -53,7 +57,7 @@ func PreviewRollback(ctx context.Context, opts RollbackOptions) (*RollbackResult
 	}
 
 	// Get the checkpoint for the target version
-	targetCheckpoint, err := getCheckpointForVersion(ctx, stack, opts.TargetVersion)
+	targetCheckpoint, err := GetCheckpointForVersion(ctx, stack, opts.TargetVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get checkpoint for version %d: %w", opts.TargetVersion, err)
 	}
@@ -95,14 +99,17 @@ func ExecuteRollback(ctx context.Context, opts RollbackOptions) (*RollbackResult
 	if opts.Output == nil {
 		opts.Output = os.Stdout
 	}
+	if opts.Operator == nil {
+		opts.Operator = DefaultOperator
+	}
 
-	stack, err := auto.SelectStackLocalSource(ctx, opts.StackName, opts.ProjectPath)
+	stack, err := opts.Operator.SelectStack(ctx, opts.StackName, opts.ProjectPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to select stack: %w", err)
 	}
 
 	// Get the checkpoint for the target version
-	targetCheckpoint, err := getCheckpointForVersion(ctx, stack, opts.TargetVersion)
+	targetCheckpoint, err := GetCheckpointForVersion(ctx, stack, opts.TargetVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get checkpoint for version %d: %w", opts.TargetVersion, err)
 	}
@@ -147,8 +154,8 @@ func ExecuteRollback(ctx context.Context, opts RollbackOptions) (*RollbackResult
 	}, nil
 }
 
-// getCheckpointForVersion retrieves the state checkpoint for a specific version
-func getCheckpointForVersion(ctx context.Context, stack auto.Stack, version int) (apitype.UntypedDeployment, error) {
+// GetCheckpointForVersion retrieves the state checkpoint for a specific version
+func GetCheckpointForVersion(ctx context.Context, stack RollbackStack, version int) (apitype.UntypedDeployment, error) {
 	// Get the stack history to find the checkpoint
 	history, err := stack.History(ctx, 0, 0)
 	if err != nil {
@@ -156,15 +163,7 @@ func getCheckpointForVersion(ctx context.Context, stack auto.Stack, version int)
 	}
 
 	// Find the version in history
-	found := false
-	for _, update := range history {
-		if update.Version == version {
-			found = true
-			break
-		}
-	}
-
-	if !found {
+	if !VersionExistsInHistory(history, version) {
 		return apitype.UntypedDeployment{}, fmt.Errorf("version %d not found in history", version)
 	}
 
@@ -183,14 +182,31 @@ func getCheckpointForVersion(ctx context.Context, stack auto.Stack, version int)
 		return apitype.UntypedDeployment{}, fmt.Errorf("failed to export deployment: %w", err)
 	}
 
-	// Modify the deployment version to indicate we're targeting a specific version
-	// This is a simplified approach - in production, you'd fetch the actual historical state
-	var state map[string]interface{}
-	if err := json.Unmarshal(deployment.Deployment, &state); err != nil {
+	// Validate the deployment can be parsed
+	if err := ValidateDeployment(deployment); err != nil {
 		return apitype.UntypedDeployment{}, fmt.Errorf("failed to parse deployment: %w", err)
 	}
 
 	return deployment, nil
+}
+
+// VersionExistsInHistory checks if a version exists in the history
+func VersionExistsInHistory(history []auto.UpdateSummary, version int) bool {
+	for _, update := range history {
+		if update.Version == version {
+			return true
+		}
+	}
+	return false
+}
+
+// ValidateDeployment validates that a deployment can be parsed
+func ValidateDeployment(deployment apitype.UntypedDeployment) error {
+	var state map[string]interface{}
+	if err := json.Unmarshal(deployment.Deployment, &state); err != nil {
+		return err
+	}
+	return nil
 }
 
 func convertOpTypeChangeSummary(summary map[apitype.OpType]int) map[string]int {
