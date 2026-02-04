@@ -76,7 +76,7 @@ pulumi-rollback to --stack mystack --version 5 --yes
 
 ## License
 
-Copyright 2024 Pegasus Heavy Industries LLC
+Copyright 2026 Pegasus Heavy Industries LLC
 
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
 
