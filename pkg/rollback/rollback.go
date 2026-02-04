@@ -171,12 +171,12 @@ func GetCheckpointForVersion(ctx context.Context, stack RollbackStack, version i
 	// Note: Pulumi's API doesn't directly expose historical checkpoints
 	// We need to use the export at that version through backend-specific means
 	// For now, we'll export the current state and note this limitation
-	
+
 	// The proper way to get historical checkpoints depends on the backend:
 	// - Pulumi Cloud: API call to get deployment at version
 	// - S3/GCS/Azure: Read the checkpoint file directly from storage
 	// - Local: Read from .pulumi directory
-	
+
 	deployment, err := stack.Export(ctx)
 	if err != nil {
 		return apitype.UntypedDeployment{}, fmt.Errorf("failed to export deployment: %w", err)
