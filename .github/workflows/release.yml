@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Run tests
+        run: go test -v ./...
+
+      - name: Build release binaries
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          GIT_COMMIT=$(git rev-parse --short HEAD)
+          BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          
+          LDFLAGS="-s -w -X github.com/PegasusHeavyIndustries/pulumi-rollback/cmd/pulumi-rollback.Version=${VERSION} -X github.com/PegasusHeavyIndustries/pulumi-rollback/cmd/pulumi-rollback.GitCommit=${GIT_COMMIT} -X github.com/PegasusHeavyIndustries/pulumi-rollback/cmd/pulumi-rollback.BuildDate=${BUILD_DATE}"
+          
+          mkdir -p dist
+          
+          # Linux amd64
+          GOOS=linux GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o dist/pulumi-rollback-linux-amd64 .
+          
+          # Linux arm64
+          GOOS=linux GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o dist/pulumi-rollback-linux-arm64 .
+          
+          # macOS amd64
+          GOOS=darwin GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o dist/pulumi-rollback-darwin-amd64 .
+          
+          # macOS arm64 (Apple Silicon)
+          GOOS=darwin GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o dist/pulumi-rollback-darwin-arm64 .
+          
+          # Windows amd64
+          GOOS=windows GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o dist/pulumi-rollback-windows-amd64.exe .
+          
+          # Windows arm64
+          GOOS=windows GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o dist/pulumi-rollback-windows-arm64.exe .
+
+      - name: Create checksums
+        run: |
+          cd dist
+          sha256sum * > checksums.txt
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/pulumi-rollback-linux-amd64
+            dist/pulumi-rollback-linux-arm64
+            dist/pulumi-rollback-darwin-amd64
+            dist/pulumi-rollback-darwin-arm64
+            dist/pulumi-rollback-windows-amd64.exe
+            dist/pulumi-rollback-windows-arm64.exe
+            dist/checksums.txt
